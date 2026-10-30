@@ -1,0 +1,8 @@
+---
+  - name: Simple USS Command Playbook using roles
+    hosts: zos_host2 
+    environment: "{{ environment_vars }}"
+    gather_facts: no
+    roles:
+      - uss_cmd
+      - cleanup

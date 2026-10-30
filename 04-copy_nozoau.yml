@@ -1,0 +1,9 @@
+---
+  - name: copy without ZOAU
+    hosts: zos_host 
+    environment: "{{ environment_vars }}"
+    gather_facts: no
+    tasks:
+            - name: copy via USS cp command
+              ansible.builtin.command:
+                cmd: cp "//'ibmuser.jcl(input1)'" "//'ibmuser.ansible.jcl(output2)'"

@@ -1,0 +1,12 @@
+---
+  - name: Update member with ZOAU Replace
+    hosts: zos_host 
+    environment: "{{ environment_vars }}"
+    gather_facts: no
+    tasks:
+            - name: replace data
+              ibm.ibm_zos_core.zos_replace:
+                target: ibmuser.ansible.jcl(output1)
+                regexp: "INPUT1.+"
+                replace: "OUTPUT1 MEMBER"
+ 

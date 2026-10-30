@@ -1,0 +1,33 @@
+---
+- name: Get Program Definition from CICS
+  hosts: zos_host
+  environment: "{{ environment_vars }}"
+  vars: 
+    inprog: eqactl
+#    inprog: cbcdebug
+  vars_prompt:
+    - name: my_secret_password
+      prompt: "Enter your secure password"
+      private: true
+      confirm: true
+  tasks:
+    - name: CMCI Get 
+      ibm.ibm_zos_cics.cmci_get:
+        cmci_host: "9.31.120.248"
+        cmci_port: 8154
+        cmci_user: "IBMUSER"
+        cmci_password: "{{ my_secret_password }}"
+        insecure: True
+        context: CICSTS63 # context is the name of your CICSplex in a CPSM environment or the applid of your region in an SMSS environment
+        type: cicsdefinitionprogram
+        resources:
+          filter:
+            name: '{{ inprog }}'
+          get_parameters:
+            - name: csdgroup
+              value: EQA
+        record_count: 1
+      delegate_to: localhost
+      register: output_records
+
+#    - debug: msg='{{ output_records.records }}'

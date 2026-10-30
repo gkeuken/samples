@@ -1,0 +1,7 @@
+---
+  - name: MQCHECK
+    hosts: zos_host3
+    environment: "{{ environment_vars }}"
+    gather_facts: True
+    roles:
+      - mqcheck 

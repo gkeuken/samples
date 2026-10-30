@@ -1,0 +1,115 @@
+{{ jobcard|safe }}
+//*
+//*-----------------------------------------------------------------*
+//*  Step 1: Compile the C put program                              *
+//*-----------------------------------------------------------------*
+//COMPILE  EXEC PGM=CCNDRVR,REGION=0M,
+//         PARM='OPTFILE(DD:OPTIONS)'
+//STEPLIB  DD DSN={{ chlq }}.SCCNCMP,DISP=SHR
+//SYSLIB DD DISP=SHR,DSN={{ mqhlq }}.SCSQLOAD
+//       DD DISP=SHR,DSN={{ mqhlq }}.SCSQC370
+//SYSIN    DD *
+#include <stdio.h>
+#include <string.h>
+#include <cmqc.h>
+int main(int argc, char *argv[])
+{
+    MQHCONN hConn = MQHC_UNUSABLE_HCONN;
+    MQHOBJ  hObj  = MQHO_UNUSABLE_HOBJ;
+    MQLONG  cc, rc;
+    MQOD  od  = {MQOD_DEFAULT};
+    MQMD  md  = {MQMD_DEFAULT};
+    MQGMO gmo = {MQGMO_DEFAULT};
+    char  buffer[4096];
+    MQLONG bufLen  = (MQLONG)sizeof(buffer) - 1;
+    MQLONG dataLen = 0;
+    char *qmgr  = "{{ q_mgr }}";
+    char *queue = "{{ q_name }}";
+    int i;
+    char *hex = "{{ q_id }}";
+    memcpy(md.MsgId, MQMI_NONE, sizeof(md.MsgId));
+    for (i = 0; i < MQ_MSG_ID_LENGTH && hex[i*2] != '\0'; i++) {
+        unsigned int byte;
+        sscanf(&hex[i*2], "%02X", &byte);
+        md.MsgId[i] = (MQBYTE)byte;
+    }
+    gmo.MatchOptions = MQMO_MATCH_MSG_ID;   /* ADD: match on MsgId */
+    /* Connect to queue manager */
+    MQCONN(qmgr, &hConn, &cc, &rc);
+    if (cc != MQCC_OK) {
+        printf("MQCONN failed CC=%d RC=%d\n", cc, rc);
+        return 8;
+    }
+    /* Open queue for destructive get */
+    strncpy(od.ObjectName, queue, MQ_Q_NAME_LENGTH);
+    MQOPEN(hConn, &od,
+           MQOO_INPUT_SHARED|MQOO_FAIL_IF_QUIESCING,
+           &hObj, &cc, &rc);
+    if (cc != MQCC_OK) {
+        printf("MQOPEN failed CC=%d RC=%d\n", cc, rc);
+        MQDISC(&hConn, &cc, &rc);
+        return 8;
+    }
+    /* Get first available message, wait up to 5 seconds */
+    gmo.Options      = MQGMO_NO_SYNCPOINT |
+                       MQGMO_FAIL_IF_QUIESCING |
+                       MQMO_MATCH_MSG_ID |
+                       MQGMO_WAIT;
+    gmo.WaitInterval = 50;           /* milliseconds */
+    MQGET(hConn, hObj, &md, &gmo,
+          bufLen, buffer, &dataLen, &cc, &rc);
+    if (cc == MQCC_OK) {
+        buffer[dataLen] = '\0';
+        printf("Message received from queue %s:\n%s\n", queue, buffer);
+        MQCMIT(hConn, &cc, &rc);
+    } else if (rc == MQRC_NO_MSG_AVAILABLE) {
+        printf("No messages on queue %s\n", queue);
+    } else {
+        printf("MQGET failed CC=%d RC=%d\n", cc, rc);
+    }
+    MQCLOSE(hConn, &hObj, MQCO_NONE, &cc, &rc);
+    MQDISC(&hConn, &cc, &rc);
+    return (cc == MQCC_OK) ? 0 : 8;
+}
+/*
+//SYSLIN   DD DSN=&&OBJ,DISP=(NEW,PASS),RECFM=FB,LRECL=80,
+//            UNIT=SYSALLDA,SPACE=(TRK,(5,2))
+//SYSPRINT DD SYSOUT=*
+//SYSCPRT  DD SYSOUT=*
+//SYSUT1   DD UNIT=SYSALLDA,SPACE=(TRK,(5,2))
+//SYSUT4   DD UNIT=SYSALLDA,SPACE=(TRK,(5,2))
+//SYSUT5   DD UNIT=SYSALLDA,SPACE=(TRK,(5,2))
+//SYSUT6   DD UNIT=SYSALLDA,SPACE=(TRK,(5,2))
+//SYSUT7   DD UNIT=SYSALLDA,SPACE=(TRK,(5,2))
+//SYSUT8   DD UNIT=SYSALLDA,SPACE=(TRK,(5,2))
+//SYSUT9   DD UNIT=SYSALLDA,SPACE=(TRK,(5,2))
+//SYSUT10  DD UNIT=SYSALLDA,SPACE=(TRK,(5,2))
+//SYSUT14  DD UNIT=SYSALLDA,SPACE=(TRK,(5,2))
+//SYSUT15  DD UNIT=SYSALLDA,SPACE=(TRK,(5,2))
+//SYSMDECK DD UNIT=SYSALLDA,SPACE=(TRK,(5,2))
+//OPTIONS  DD *
+  RENT,OPT(2),LONGNAME
+/*
+//*
+//*-----------------------------------------------------------------*
+//*  Step 2: Link-edit                                              *
+//*-----------------------------------------------------------------*
+//LKED     EXEC PGM=IEWL,REGION=0M,COND=(8,LT,COMPILE),
+//         PARM='LIST,LET,XREF,RENT,REUS'
+//SYSLIB   DD DSN={{ lehlq }}.SCEELKED,DISP=SHR
+//         DD DSN={{ mqhlq }}.SCSQLOAD,DISP=SHR
+//         DD DSN={{ mqhlq }}.SCSQC370,DISP=SHR
+//         DD DSN={{ mqhlq }}.SCSQHPPS,DISP=SHR
+//         DD DSN={{ lehlq }}.SCEERUN,DISP=SHR
+//SYSLIN   DD DSN=&&OBJ,DISP=(OLD,DELETE)
+//         DD *
+  INCLUDE SYSLIB(CSQBSTUB)
+  ENTRY CEESTART
+  NAME MQGETPGM(R)
+/*
+//SYSLMOD  DD DSN={{ user_loadlib }}(MQGETPGM),DISP=SHR
+//*            UNIT=SYSALLDA,SPACE=(TRK,(10,5)),
+//*            DCB=(RECFM=U,BLKSIZE=32760)
+//SYSPRINT DD SYSOUT=*
+//SYSUT1   DD UNIT=SYSALLDA,SPACE=(TRK,(5,2))
+//*

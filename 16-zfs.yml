@@ -1,0 +1,100 @@
+---
+- name: New ZFS/Filesystem
+  hosts: zos_host
+  environment: "{{ environment_vars }}"
+  vars_prompt:
+    - name: zfs_dsn
+      prompt: "Enter the zFS data set name"
+      private: false
+    - name: mount_point
+      prompt: "Enter the mount point path"
+      private: false
+
+  tasks:
+    # 1. Validate input before touching the system
+    - name: Validate user input
+      ansible.builtin.assert:
+        that:
+          - zfs_dsn is match('^[A-Za-z#$@][A-Za-z0-9#$@-]{0,7}(\.[A-Za-z#$@][A-Za-z0-9#$@-]{0,7}){0,21}$')
+          - zfs_dsn | length <= 44
+          - mount_point is match('^/[^\s]+')
+          - mount_point is not search('\.\.')
+          - mount_point != '/'
+        fail_msg: >-
+          Invalid input. zfs_dsn must be a valid z/OS data set name (max 44 chars)
+          and mount_point must be an absolute USS path without '..'.
+
+    # 2. Check that the zFS (a VSAM linear data set cluster) is not cataloged
+    - name: Look for an existing zFS data set
+      ibm.ibm_zos_core.zos_find:
+        patterns:
+          - "{{ zfs_dsn | upper }}"
+        resource_type: cluster
+      register: zfs_lookup
+
+    - name: Fail if the zFS data set already exists
+      ansible.builtin.assert:
+        that:
+          - zfs_lookup.data_sets | length == 0
+        fail_msg: "Data set {{ zfs_dsn | upper }} already exists. Aborting."
+
+    # 3. Check that the mount point path does not exist
+    - name: Check the mount point path
+      ansible.builtin.stat:
+        path: "{{ mount_point }}"
+      register: mp_stat
+
+    - name: Fail if the mount point already exists
+      ansible.builtin.assert:
+        that:
+          - not mp_stat.stat.exists
+        fail_msg: "Mount point {{ mount_point }} already exists. Aborting."
+
+    # 4. Create and mount. If anything fails, roll back only what this play created.
+    - name: Create and mount the filesystem
+      block:
+        - name: Create a ZFS
+          ibm.ibm_zos_core.zos_data_set:
+            name: "{{ zfs_dsn | upper }}"
+            type: zfs
+            space_primary: 5
+            space_type: m
+            state: present
+
+        - name: Create the mount point directory
+          ansible.builtin.file:
+            path: "{{ mount_point }}"
+            state: directory
+            mode: "0755"
+
+        - name: Mount a filesystem
+          ibm.ibm_zos_core.zos_mount:
+            src: "{{ zfs_dsn | upper }}"
+            path: "{{ mount_point }}"
+            fs_type: zfs
+            state: mounted
+
+      rescue:
+        - name: Roll back - unmount if it was mounted
+          ibm.ibm_zos_core.zos_mount:
+            src: "{{ zfs_dsn | upper }}"
+            path: "{{ mount_point }}"
+            fs_type: zfs
+            state: unmounted
+          ignore_errors: true
+
+        - name: Roll back - remove the mount point directory
+          ansible.builtin.file:
+            path: "{{ mount_point }}"
+            state: absent
+          ignore_errors: true
+
+        - name: Roll back - delete the zFS data set
+          ibm.ibm_zos_core.zos_data_set:
+            name: "{{ zfs_dsn | upper }}"
+            state: absent
+          ignore_errors: true
+
+        - name: Report failure
+          ansible.builtin.fail:
+            msg: "Creation or mount of {{ zfs_dsn | upper }} at {{ mount_point }} failed and was rolled back."

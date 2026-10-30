@@ -1,0 +1,98 @@
+{{ jobcard|safe }}
+//*
+//*-----------------------------------------------------------------*
+//*  Step 1: Compile the C put program                              *
+//*-----------------------------------------------------------------*
+//COMPILE  EXEC PGM=CCNDRVR,REGION=0M,
+//         PARM='OPTFILE(DD:OPTIONS)'
+//STEPLIB  DD DSN={{ chlq }}.SCCNCMP,DISP=SHR
+//SYSLIB DD DISP=SHR,DSN={{ mqhlq }}.SCSQLOAD
+//       DD DISP=SHR,DSN={{ mqhlq }}.SCSQC370
+//SYSIN    DD *
+#include <string.h>
+#include <cmqc.h>
+int main(int argc, char *argv[])
+{
+    MQHCONN hConn = MQHC_UNUSABLE_HCONN;
+    MQHOBJ  hObj  = MQHO_UNUSABLE_HOBJ;
+    MQLONG  cc, rc;
+    MQOD od  = {MQOD_DEFAULT};
+    MQMD md  = {MQMD_DEFAULT};
+    MQPMO pmo = {MQPMO_DEFAULT};
+    char *qmgr = "{{ q_mgr }}";
+    char *queue = "{{ q_name }}";
+    char *msg   = "{{ q_message }}";
+    MQLONG msgLen = (MQLONG)strlen(msg);
+    MQCONN(qmgr, &hConn, &cc, &rc);
+    if (cc != MQCC_OK) return 8;
+    strncpy(od.ObjectName, queue, MQ_Q_NAME_LENGTH);
+    MQOPEN(hConn, &od, MQOO_OUTPUT|MQOO_FAIL_IF_QUIESCING,
+           &hObj, &cc, &rc);
+    if (cc != MQCC_OK) { MQDISC(&hConn,&cc,&rc); return 8; }
+    memcpy(md.Format, MQFMT_STRING, MQ_FORMAT_LENGTH);
+    md.Persistence = MQPER_PERSISTENT;
+    pmo.Options = MQPMO_NO_SYNCPOINT|MQPMO_FAIL_IF_QUIESCING;
+    /* --- BEFORE MQPUT: ensure MQ generates a new MsgId --- */
+    memcpy(md.MsgId, MQMI_NONE, sizeof(md.MsgId));
+    memcpy(md.Format, MQFMT_STRING, MQ_FORMAT_LENGTH);
+    md.Persistence = MQPER_PERSISTENT;
+    pmo.Options = MQPMO_NO_SYNCPOINT | MQPMO_FAIL_IF_QUIESCING;
+    MQPUT(hConn, hObj, &md, &pmo, msgLen, msg, &cc, &rc);
+    /* --- AFTER MQPUT: print the MsgId as hex --- */
+    if (cc == MQCC_OK) {
+        int i;
+        for (i = 0; i < MQ_MSG_ID_LENGTH; i++)
+            printf("%02X", (unsigned char)md.MsgId[i]);
+        printf("\n");
+    } else {
+        printf("Message put failure on queue '%s'\n", queue);
+        MQCLOSE(hConn, &hObj, MQCO_NONE, &cc, &rc);
+        MQDISC(&hConn, &cc, &rc);
+        return 8;
+    }
+    MQCLOSE(hConn, &hObj, MQCO_NONE, &cc, &rc);
+    MQDISC(&hConn, &cc, &rc);
+    return (cc == MQCC_OK) ? 0 : 8;
+}
+/*
+//SYSLIN   DD DSN=&&OBJ,DISP=(NEW,PASS),RECFM=FB,LRECL=80,
+//            UNIT=SYSALLDA,SPACE=(TRK,(5,2))
+//SYSPRINT DD SYSOUT=*
+//SYSCPRT  DD SYSOUT=*
+//SYSUT1   DD UNIT=SYSALLDA,SPACE=(TRK,(5,2))
+//SYSUT4   DD UNIT=SYSALLDA,SPACE=(TRK,(5,2))
+//SYSUT5   DD UNIT=SYSALLDA,SPACE=(TRK,(5,2))
+//SYSUT6   DD UNIT=SYSALLDA,SPACE=(TRK,(5,2))
+//SYSUT7   DD UNIT=SYSALLDA,SPACE=(TRK,(5,2))
+//SYSUT8   DD UNIT=SYSALLDA,SPACE=(TRK,(5,2))
+//SYSUT9   DD UNIT=SYSALLDA,SPACE=(TRK,(5,2))
+//SYSUT10  DD UNIT=SYSALLDA,SPACE=(TRK,(5,2))
+//SYSUT14  DD UNIT=SYSALLDA,SPACE=(TRK,(5,2))
+//SYSUT15  DD UNIT=SYSALLDA,SPACE=(TRK,(5,2))
+//SYSMDECK DD UNIT=SYSALLDA,SPACE=(TRK,(5,2))
+//OPTIONS  DD *
+  RENT,OPT(2),LONGNAME
+/*
+//*
+//*-----------------------------------------------------------------*
+//*  Step 2: Link-edit                                              *
+//*-----------------------------------------------------------------*
+//LKED     EXEC PGM=IEWL,REGION=0M,COND=(8,LT,COMPILE),
+//         PARM='LIST,LET,XREF,RENT,REUS'
+//SYSLIB   DD DSN={{ lehlq }}.SCEELKED,DISP=SHR
+//         DD DSN={{ mqhlq }}.SCSQLOAD,DISP=SHR
+//         DD DSN={{ mqhlq }}.SCSQC370,DISP=SHR
+//         DD DSN={{ mqhlq }}.SCSQHPPS,DISP=SHR
+//         DD DSN={{ lehlq }}.SCEERUN,DISP=SHR
+//SYSLIN   DD DSN=&&OBJ,DISP=(OLD,DELETE)
+//         DD *
+  INCLUDE SYSLIB(CSQBSTUB)
+  ENTRY CEESTART
+  NAME MQPUTPGM(R)
+/*
+//SYSLMOD  DD DSN={{ user_loadlib }}(MQPUTPGM),DISP=SHR
+//*            UNIT=SYSALLDA,SPACE=(TRK,(10,5)),
+//*            DCB=(RECFM=U,BLKSIZE=32760)
+//SYSPRINT DD SYSOUT=*
+//SYSUT1   DD UNIT=SYSALLDA,SPACE=(TRK,(5,2))
+//*

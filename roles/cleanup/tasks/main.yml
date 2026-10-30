@@ -1,0 +1,9 @@
+            - name: Run Playbook Cleanup
+              ansible.builtin.command:
+                cmd: rm -rf simple_stdout
+
+            - name: display directory to show file is gone
+              ansible.builtin.command: 
+                cmd: ls -al  
+              register: cmdout
+            - debug: msg={{ cmdout.stdout }} 

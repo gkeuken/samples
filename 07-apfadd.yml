@@ -1,0 +1,18 @@
+---
+- name: Add APF Sample
+  hosts: zos_host
+  environment: "{{ environment_vars }}"
+  tasks:
+    - name: Create New data set
+      ibm.ibm_zos_core.zos_data_set:
+        name: SYS1.VS01.CUSTOM.LOADLIB2
+        type: pds
+        space_primary: 5
+        space_type: m
+        record_format: fb
+        record_length: 80
+
+    - name: Add data set to APF  
+      ibm.ibm_zos_core.zos_apf:
+        library: SYS1.VS01.CUSTOM.LOADLIB2
+        force_dynamic: true

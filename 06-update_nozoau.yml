@@ -1,0 +1,23 @@
+---
+  - name: Update without ZOAU
+    hosts: zos_host 
+    environment: "{{ environment_vars }}"
+    gather_facts: no
+    tasks:
+            - name: copy data to USS first
+              ansible.builtin.command:
+                cmd: cp -O c=iso8859-1 "//'ibmuser.ansible.jcl(output2)'" '/tmp/output2'
+
+            - name: replace data
+              ansible.builtin.replace:
+                path: /tmp/output2
+                regexp: "INPUT1.+"
+                replace: "OUTPUT2 MEMBER"
+
+            - name: convert back to EBCDIC 
+              ansible.builtin.shell:
+                cmd: "iconv -f iso8859-1 -t ibm-1047 /tmp/output2 > /tmp/output2_converted"         
+
+            - name: copy back to PDS
+              ansible.builtin.command:
+                cmd: cp '/tmp/output2_converted' "//'ibmuser.ansible.jcl(output2)'"            

@@ -1,0 +1,12 @@
+---
+  - name: copy test
+    hosts: zos_host 
+    environment: "{{ environment_vars }}"
+    tasks:
+            - name: copy files
+              ibm.ibm_zos_core.zos_copy:
+                src: ibmuser.jcl(input1)
+                dest: ibmuser.ansible.jcl(output1)
+                remote_src: true
+                replace: true
+ 

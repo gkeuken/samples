@@ -1,0 +1,11 @@
+jobcard: "//ANSMQJB JOB 'ANSIBLE JOB',CLASS=A,MSGCLASS=X"
+mqss_char: '%'
+q_mgr: 'CSQ9'
+q_name: 'ANSIBLEQ'
+q_message: '{{ ansible_date_time.iso8601 }}-MQCHECK-MESSAGE'
+work_dir: '/u/ibmuser'
+mqhlq: 'MQCD94'
+lehlq: 'CEE'
+chlq: 'CBC'
+user_loadlib: 'IBMUSER.LOADLIB'
+force_qdel: False

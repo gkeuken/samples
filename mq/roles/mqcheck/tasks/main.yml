@@ -1,0 +1,140 @@
+---
+# 
+#  This SAMPLE Playbook defines a new Local Queue and compiles both an MQ PUT and MQ GET programs that are
+#  JCL Templates. Variables are required to be updated to point to required libraries as well as define the
+#  QMGR and Local Queue to be created. The message produced in the queue is also a variable and timestamped so
+#  it too can be customized. When the message is created the MQ message ID is captured and then used later 
+#  for the MQ Get so as to only retrieve the intended test message. The queue is checked after the GET call
+#  to ensure it is now empty (current depth=0) and the queue is then deleted.
+#
+#
+
+      - name: Check if QUEUE {{ q_name }} already exists
+        ibm.ibm_zos_core.zos_operator:
+          cmd: '{{ mqss_char }}{{ q_mgr }} display queue({{ q_name }})'
+        register: q_check
+
+      - name: Fail if existing queue found and force_qdel parameter not overridden
+        ansible.builtin.fail:
+          msg: "ERROR!! {{ q_name }} already defined. To confirm DELETE rerun playbook with parameter: -e force_qdel=Yes"
+        when: 
+          - force_qdel == False 
+          - "'NO QUEUE FOUND MATCHING' not in q_check.stdout"  
+
+      - name: Delete existing Queue {{ q_name }} 
+        ibm.ibm_zos_core.zos_operator:
+          cmd: '{{ mqss_char }}{{ q_mgr }} delete qlocal({{ q_name }}) purge'
+        when:
+          - force_qdel == 'yes'
+          - "'NO QUEUE FOUND MATCHING' not in q_check.stdout"  
+
+      - name: Define new Test Queue {{ q_name }}
+        ibm.ibm_zos_core.zos_operator:
+          cmd: '{{ mqss_char }}{{ q_mgr }} define qlocal({{ q_name }})'
+        register: q_output
+        failed_when: "'NORMAL COMPLETION' not in q_output.stdout"
+
+      - name: Print Output of define queue command
+        ansible.builtin.debug:
+          msg: "{{ q_output.stdout }}"  
+
+      - name: Resolve templated MQ PUT compile JCL and execute
+        ibm.ibm_zos_core.zos_job_submit:
+          src: templates/qput.template
+          use_template: True
+          remote_src: False
+
+      - name: Create Sticky Bit file in USS for MQPUTPGM
+        ansible.builtin.file:
+          path: "{{ work_dir }}/mqputpgm"
+          attributes: +t
+          mode: 755
+          state: touch
+
+      - name: Run mqputpgm to put message on queue and write the Message ID to stdout 
+        ansible.builtin.shell:
+          cmd: 'export STEPLIB={{ user_loadlib }}:{{ mqhlq }}.SCSQLOAD:{{ lehlq }}.SCEERUN;{{ work_dir }}/mqputpgm'
+        register: output
+
+      - name: Save the MsgId to a variable for use later in the MQ GET call
+        ansible.builtin.set_fact:
+          q_id: "{{ output.stdout }}"
+
+      - name: Print saved MsgId from MQPUT to screen
+        ansible.builtin.debug:
+          msg: "{{ q_id }}"  
+
+      - name: Print the MQ Message Text for visual verification later
+        ansible.builtin.debug:
+          msg: "{{ q_message }}"  
+
+      - name: Resolve templated MQ GET compile JCL and execute
+        ibm.ibm_zos_core.zos_job_submit:
+          src: templates/qget.template
+          use_template: True
+          remote_src: False
+
+      - name: Create Sticky Bit file in USS for MQGETPGM
+        ansible.builtin.file:
+          path: "{{ work_dir }}/mqgetpgm"
+          attributes: +t
+          mode: 755
+          state: touch
+
+      - name: Run mqgetpgm to obtain the MsgID created and save the retrieved Message to variable 
+        ansible.builtin.shell:
+          cmd: 'export STEPLIB={{ user_loadlib }}:{{ mqhlq }}.SCSQLOAD:{{ lehlq }}.SCEERUN;{{ work_dir }}/mqgetpgm'
+        register: output
+
+      - name: Print the Message obtained via MQ GET
+        ansible.builtin.debug:
+          msg: "{{ output.stdout }}"
+
+      - name: Check Queue depth of Test Queue {{ q_name }}, it should be zero.
+        ibm.ibm_zos_core.zos_operator:
+          cmd: '{{ mqss_char }}{{ q_mgr }} display queue({{ q_name }}) curdepth'
+        register: qdisplay_output
+        failed_when: "'CURDEPTH(0)' not in qdisplay_output.stdout"
+            
+      - name: Display output of queue display command  
+        ansible.builtin.debug: 
+          msg: "{{ qdisplay_output.stdout }}"  
+
+      - name: Delete Test Queue {{ q_name }}
+        ibm.ibm_zos_core.zos_operator:
+          cmd: "{{ mqss_char }}{{ q_mgr }} delete qlocal({{ q_name }})"
+        register: qdel_output
+
+      - name: Print output of queue delete command   
+        ansible.builtin.debug: 
+          msg: "{{ qdel_output.stdout }}"  
+        failed_when: "'NORMAL COMPLETION' not in qdel_output.stdout"
+
+      - name: Display Usage
+        ibm.ibm_zos_core.zos_operator:
+          cmd: '{{ mqss_char }}{{ q_mgr }} display usage'
+        register: usage_output
+      - debug: msg="{{ usage_output.stdout }}"
+
+      - name: Display QMGR DEADQ to find DLQ
+        ibm.ibm_zos_core.zos_operator:
+          cmd: '{{ mqss_char }}{{ q_mgr }} display qmgr deadq'
+        register: getdlq_output 
+
+      - name: Set Fact
+        ansible.builtin.set_fact:
+          dlq_name: "{{ getdlq_output.stdout.split('DEADQ(')[1].split(')')[0] }}"
+      - debug: msg="{{ dlq_name }}"
+        
+      - name: Display DLQ
+        ibm.ibm_zos_core.zos_operator:
+          cmd: '{{ mqss_char }}{{ q_mgr }} display queue({{ dlq_name }}) curdepth maxdepth'
+        register: dlq_output
+      - debug: msg='{{ dlq_output.stdout }}'
+
+      - name: Archive LOG
+        ibm.ibm_zos_core.zos_operator:
+          cmd: '{{ mqss_char }}{{ q_mgr }} archive log'
+        register: arc_logout
+      - debug: msg="{{ arc_logout.stdout }}"  
+

@@ -1,0 +1,26 @@
+---
+- name: New ZFS/Filesystem
+  hosts: zos_host
+  environment: "{{ environment_vars }}"
+  vars_prompt:
+  - name: zfs_dsn
+    prompt: "Enter the zFS data set name"
+    private: false
+  - name: mount_point
+    prompt: "Enter the mount point path"
+    private: false
+
+  tasks:
+    - name: Create a ZFS
+      ibm.ibm_zos_core.zos_data_set:
+        name: '{{ zfs_dsn }}'
+        type: zfs
+        space_primary: 5
+        space_type: m
+
+    - name: Mount a filesystem.
+      ibm.ibm_zos_core.zos_mount:
+        src: '{{ zfs_dsn }}'   
+        path: '{{ mount_point }}'
+        fs_type: zfs
+        state: mounted        

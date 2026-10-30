@@ -1,0 +1,29 @@
+---
+- name: Sample API call via Curl to System Automation 
+  hosts: zos_host3
+  environment: "{{ environment_vars }}"
+  vars:
+    res_name: SDSF
+  vars_prompt:
+    - name: my_secret_password
+      prompt: "Enter your secure password"
+      private: true
+      confirm: true
+  tasks:
+      - name: Curl to System Automation API
+        ansible.builtin.uri: 
+          url: http://{{ ansible_host }}:8443/ibm/sa/v1/resources?name={{ res_name }}
+          method: GET
+          body_format: json
+          user: ibmuser
+          password: "{{ my_secret_password }}"
+          return_content: true
+          headers:
+            Content-Type: application/json
+        register: sysauto
+      - debug: msg='{{ sysauto.content }}'         
+
+      - name: Set z/OS Task ID based returned Result
+        ansible.builtin.set_fact:
+          fnd_id: "{{ sysauto.content | from_json | json_query('_embedded.resourceSummaryList[*].id') }}"
+      - debug: msg='The Resource ID for {{ res_name }} is {{ fnd_id[0] }}'    

@@ -1,0 +1,29 @@
+---
+  - name: Simple USS Command Playbook
+    hosts: zos_host 
+    environment: "{{ environment_vars }}"
+    gather_facts: no
+    vars_prompt:  
+      - name: ansible_become_user
+        prompt: Enter the privileged escalation user
+      - name: ansible_become_password
+        prompt: Enter the privilege escalation password?
+    vars:
+      ansible_su_prompt_l10n: FSUM5019 Enter the password for {{ ansible_become_user }}
+      ansible_become_method: su
+    tasks:
+            - name: Run USS Command
+              ansible.builtin.command:
+                cmd: /usr/sbin/unmount /usr/lpp/chc
+              register: cmdout
+              become: True
+            - debug: msg={{ cmdout.stdout }} 
+
+            - name: Run USS Command
+              ansible.builtin.command:
+                cmd: /usr/sbin/mount -t zfs -f 'CDC.V11R4M0.ZFS' '/usr/lpp/chc'
+              register: cmdout
+              become: True
+            - debug: msg={{ cmdout.stdout }} 
+
+            

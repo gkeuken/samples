@@ -1,0 +1,67 @@
+---
+- name: Sample API call to START task via System Automation 
+  hosts: zos_host3
+  vars:
+    res_name: SDSF
+  environment: "{{ environment_vars }}"
+  vars_prompt:
+      - name: my_secret_password
+        prompt: "Enter your secure password"
+        private: true
+        confirm: true
+  tasks:
+      - name: Run System Automation API to find resource id from resource name
+        ansible.builtin.uri:
+          url: http://{{ ansible_host }}:8443/ibm/sa/v1/resources?name={{ res_name }}
+          method: GET
+          body_format: json
+          user: ibmuser
+          password: "{{ my_secret_password }}"
+          return_content: true
+          headers:
+            Content-Type: application/json
+            Authorization: Basic
+        register: sysauto
+      - debug: msg='{{ sysauto.content }}'
+
+      - name: Set z/OS Task ID based returned Result
+        ansible.builtin.set_fact:
+          fnd_id: "{{ sysauto.content | from_json | json_query('_embedded.resourceSummaryList[*].id') }}"
+      - debug: msg='{{ fnd_id[0] }}'
+
+      - name: Start the task via SA API using found ID 
+        ansible.builtin.uri: 
+          url: http://{{ ansible_host }}:8443/ibm/sa/v1/resources/{{ fnd_id[0] }}/start
+          method: POST
+          user: ibmuser
+          password: "{{ my_secret_password }}"
+          return_content: true
+          body_format: json
+          status_code: 202
+          body:
+              {
+                "priority": "LOW",
+                "override": [
+                  "NO"
+                ],
+                "comment": "Ansible Auto",
+                "scope": "ALL",
+                "restart": "NO"
+              }
+          headers:
+            Content-Type: application/json
+            Authorization: Basic 
+
+      - name: Sleep for 10 seconds and continue with play
+        ansible.builtin.wait_for:
+          timeout: 10
+        delegate_to: localhost
+
+      - name: check status of {{ res_name }} via zos Operator
+        ibm.ibm_zos_core.zos_operator:
+          cmd: 'd a,{{ res_name }}'
+        register: res_stat
+        failed_when: '" NOT FOUND" in res_stat.stdout'
+      - debug: msg='{{ res_stat.stdout }}'
+      
+      

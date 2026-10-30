@@ -1,0 +1,67 @@
+---
+# Recycle (inactivate, then reactivate) a VTAM application ID.
+#
+# Usage:
+#   ansible-playbook -i inventory.yml recycle_vtam_applid.yml -e applid=CICSA01
+#   ansible-playbook -i inventory.yml recycle_vtam_applid.yml -e applid=CICSA01 -e force_inactivate=true
+#
+# Requirements:
+#   - Collection ibm.ibm_zos_core (module zos_operator)
+#   - Z Open Automation Utilities (ZOAU) and IBM Python on the target z/OS system
+#   - Inventory host variables (example):
+#       ansible_python_interpreter: /usr/lpp/IBM/cyp/v3r11/pyz/bin/python3
+#       environment_vars:
+#         ZOAU_HOME: /usr/lpp/IBM/zoautil
+#         PATH: /usr/lpp/IBM/zoautil/bin:/bin
+#         LIBPATH: /usr/lpp/IBM/zoautil/lib:/usr/lib:/lib
+#   - The Ansible user must be authorized to issue VARY NET operator commands.
+
+- name: Recycle a VTAM application ID
+  hosts: "{{ target_hosts | default('zos_host') }}"
+  gather_facts: false
+  environment: "{{ environment_vars | default({}) }}"
+
+  vars:
+    # applid: <required, supplied with -e applid=NAME>
+    force_inactivate: false    # true -> VARY NET,INACT,ID=<applid>,F
+    inactivate_wait_s: 10      # seconds to wait for operator command responses
+    activate_wait_s: 10
+    status_retries: 6          # polls of D NET before giving up
+    status_delay_s: 5
+
+  tasks:
+    - name: Validate the application ID parameter
+      ansible.builtin.assert:
+        that:
+          - applid is defined
+          - applid | length > 0
+          - applid | length <= 8
+          - applid | upper is match('^[A-Z@#$][A-Z0-9@#$]{0,7}$')
+        fail_msg: >-
+          'applid' must be supplied (-e applid=NAME) and be a valid VTAM name:
+          1-8 characters, A-Z 0-9 @ # $, not starting with a digit.
+        quiet: true
+
+    - name: Set normalized application ID
+      ansible.builtin.set_fact:
+        vtam_applid: "{{ applid | upper }}"
+
+    - name: Inactivate the application ID
+      ibm.ibm_zos_core.zos_operator:
+        cmd: "VARY NET,INACT,ID={{ vtam_applid }}{{ ',F' if force_inactivate | bool else '' }}"
+      register: inactivate_result
+
+    - name: Activate the application ID
+      ibm.ibm_zos_core.zos_operator:
+        cmd: "VARY NET,ACT,ID={{ vtam_applid }}"
+      register: activate_result
+
+    - name: Display final status of the application ID
+      ibm.ibm_zos_core.zos_operator:
+        cmd: "D NET,ID={{ vtam_applid }},E"
+      register: status_after
+
+    - name: Show final status
+      ansible.builtin.debug:
+        msg: "{{ status_after.stdout }}"
+

@@ -1,0 +1,12 @@
+---
+  - name: Simple USS Command Playbook
+    hosts: zos_host 
+    environment: "{{ environment_vars }}"
+    gather_facts: no
+    tasks:
+            - name: Run USS Command
+              ansible.builtin.command:
+                cmd: ls -al
+              register: cmdout 
+            - debug: msg={{ cmdout.stdout }}  
+            

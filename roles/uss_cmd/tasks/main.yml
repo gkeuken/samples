@@ -1,0 +1,15 @@
+            - name: Run USS ls -al command and print output to stdout via Debug
+              ansible.builtin.command:
+                cmd: ls -al
+              register: cmdout
+            - debug: msg={{ cmdout.stdout }}
+
+            - name: Echo standard output of previous command to a file
+              ansible.builtin.shell:
+                cmd: echo '{{ cmdout.stdout }}' > /u/ibmuser/simple_stdout
+
+            - name: List directory to see output file created
+              ansible.builtin.command:
+                cmd: ls -al  
+              register: cmdout2
+            - debug: msg={{ cmdout2.stdout }}
